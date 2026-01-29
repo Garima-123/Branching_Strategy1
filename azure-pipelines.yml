@@ -1,0 +1,89 @@
+trigger:
+- main
+
+variables:
+  IMAGE_NAME: sample-app
+  ACR_NAME: myacr123
+  AKS_RG: aks-rg
+  AKS_NAME: my-aks-cluster
+
+stages:
+
+# Stage 1: Build & Push Docker Image
+- stage: Build
+  displayName: Build Docker Image
+  jobs:
+  - job: Build
+    displayName: Build and Push
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: Checkout@1
+
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'YOUR_SERVICE_CONNECTION'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          az acr login --name $(ACR_NAME)
+          docker build -t $(ACR_NAME).azurecr.io/$(IMAGE_NAME):$(Build.BuildId) .
+          docker push $(ACR_NAME).azurecr.io/$(IMAGE_NAME):$(Build.BuildId)
+
+# Stage 2: Deploy to Dev
+- stage: Dev
+  displayName: Deploy to Dev
+  dependsOn: Build
+  jobs:
+  - job: DeployDev
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'YOUR_SERVICE_CONNECTION'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          az aks get-credentials --resource-group $(AKS_RG) --name $(AKS_NAME) --overwrite-existing
+          sed -i "s|IMAGE_TAG|$(Build.BuildId)|g" k8s/dev.yaml
+          kubectl apply -f k8s/dev.yaml
+
+# Stage 3: Deploy to Test
+- stage: Test
+  displayName: Deploy to Test
+  dependsOn: Dev
+  jobs:
+  - job: DeployTest
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'YOUR_SERVICE_CONNECTION'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          az aks get-credentials --resource-group $(AKS_RG) --name $(AKS_NAME) --overwrite-existing
+          sed -i "s|IMAGE_TAG|$(Build.BuildId)|g" k8s/test.yaml
+          kubectl apply -f k8s/test.yaml
+
+# Stage 4: Deploy to Prod (requires approval)
+- stage: Prod
+  displayName: Deploy to Prod
+  dependsOn: Test
+  
+  jobs:
+  - job: DeployProd
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'YOUR_SERVICE_CONNECTION'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          az aks get-credentials --resource-group $(AKS_RG) --name $(AKS_NAME) --overwrite-existing
+          sed -i "s|IMAGE_TAG|$(Build.BuildId)|g" k8s/prod.yaml
+          kubectl apply -f k8s/prod.yaml
