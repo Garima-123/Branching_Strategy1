@@ -1,5 +1,5 @@
 resource "azurerm_resource_group" "Test" {
-  name     = "Test1"
+  name     = "Test13"
   location = "West Europe"
 }
 resource "azurerm_storage_account" "storegetest" {
